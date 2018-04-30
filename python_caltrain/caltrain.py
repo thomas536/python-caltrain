@@ -385,3 +385,58 @@ class Caltrain(object):
 
         possibilities.sort(key=lambda x: x.departure)
         return possibilities
+
+    def next_trains(self, a, after=None, direction=None):
+        """
+        Returns a list of the next trains leaving from station a
+        following the after date. These are ordered from soonest to
+        latest and terminate at the end of the Caltrain's 'service day'.
+
+        :param a: the starting station
+        :type a: str or unicode or Station
+        :param after: the time to find the next trips after
+                      (default datetime.now())
+        :type after: datetime
+        :param direction: the direction to find the next trips after
+        :type direction: enum
+
+        :returns: a list of possible trips
+        """
+
+        if after is None:
+            after = datetime.now()
+
+        a = self.get_station(a) if not isinstance(a, Station) else a
+
+        possibilities = []
+
+        for name, train in self.trains.items():
+
+            sw = train.service_window
+
+            # Check to see if the train's stops contains our stations
+            # and is available.
+            if after.date() < sw.start or after.date() > sw.end or \
+               after.weekday() not in sw.days or \
+               a not in train.stops:
+                continue
+
+            stop_a = train.stops[a]
+
+            # Check to make sure this train is headed in the right direction.
+            if direction is not None and direction != train.direction:
+                continue
+
+            # Check to make sure this train has not left yet.
+            if stop_a.departure < after.time():
+                continue
+
+            possibilities += [Trip(
+                                departure=stop_a.departure,
+                                arrival=stop_a.departure,
+                                duration=0,
+                                train=train
+                              )]
+
+        possibilities.sort(key=lambda x: x.departure)
+        return possibilities
