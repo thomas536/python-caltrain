@@ -214,7 +214,7 @@ class Caltrain(object):
         with z.open('fare_rules.txt', 'r') as csvfile:
             fare_reader = csv.DictReader(TextIOWrapper(csvfile))
             for r in fare_reader:
-                k = (int(r['origin_id']), int(r['destination_id']))
+                k = (r['origin_id'], r['destination_id'])
                 self._fares[k] = fare_lookup[r['fare_id']]
 
         # ------------------------
@@ -246,7 +246,7 @@ class Caltrain(object):
                     .group(1).strip().upper()
                 self.stations[r['stop_id']] = {
                     'name': _RENAME_MAP.get(stop_name, stop_name).title(),
-                    'zone': int(r['zone_id'])
+                    'zone': r['zone_id']
                 }
 
         # ---------------------------
