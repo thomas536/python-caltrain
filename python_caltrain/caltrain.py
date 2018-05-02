@@ -152,6 +152,7 @@ class TransitType(Enum):
     limited = "li"
     local = "lo"
     tamien_sanjose = "tasj"
+    special = "sp"
 
     def __str__(self):
         return self.name.replace('_', ' ').title()
@@ -231,6 +232,23 @@ class Caltrain(object):
                     end=datetime.strptime(r[-1], '%Y%m%d').date(),
                     days=set(i for i, j in enumerate(r[1:8]) if int(j) == 1)
                 )
+
+        # Account for some exceptions to calendar.txt
+        with z.open('calendar_dates.txt', 'r') as csvfile:
+            calendar_reader = csv.reader(TextIOWrapper(csvfile))
+            next(calendar_reader)  # skip header
+            for service_id, service_date, exception_type in calendar_reader:
+                # exception type: 1 indicates service added, 2 indicates service
+                # removed
+                # TODO: this doesn't handle the case of removing service dates
+                if (exception_type == "1" and
+                        service_id not in self._service_windows):
+                    service_date = datetime.strptime(
+                        service_date, '%Y%m%d').date()
+                    self._service_windows[service_id] = ServiceWindow(
+                        start=service_date, end=service_date,
+                        days=set([service_date.weekday()])
+                    )
 
         # ------------------
         # 3. Record stations
