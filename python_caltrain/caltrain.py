@@ -300,7 +300,7 @@ class Caltrain(object):
                 train = self.trains[r['trip_id']]
                 arrival_day, arrival = _resolve_time(r['arrival_time'])
                 departure_day, departure = _resolve_time(r['departure_time'])
-                train.stops[self.stations[stop_id]] =\
+                train.stops[self.stations[stop_id].name] =\
                     Stop(arrival=arrival, arrival_day=arrival_day,
                          departure=departure, departure_day=departure_day,
                          stop_number=int(r['stop_sequence']))
@@ -382,11 +382,11 @@ class Caltrain(object):
             # and is available.
             if after.date() < sw.start or after.date() > sw.end or \
                after.weekday() not in sw.days or \
-               a not in train.stops or b not in train.stops:
+               a.name not in train.stops or b.name not in train.stops:
                 continue
 
-            stop_a = train.stops[a]
-            stop_b = train.stops[b]
+            stop_a = train.stops[a.name]
+            stop_b = train.stops[b.name]
 
             # Check to make sure this train is headed in the right direction.
             if stop_a.stop_number > stop_b.stop_number:
@@ -438,10 +438,10 @@ class Caltrain(object):
             # and is available.
             if after.date() < sw.start or after.date() > sw.end or \
                after.weekday() not in sw.days or \
-               a not in train.stops:
+               a.name not in train.stops:
                 continue
 
-            stop_a = train.stops[a]
+            stop_a = train.stops[a.name]
 
             # Check to make sure this train is headed in the right direction.
             if direction is not None and direction != train.direction:
