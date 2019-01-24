@@ -16,7 +16,7 @@ from io import TextIOWrapper
 
 Train = namedtuple('Train', ['name', 'kind', 'direction',
                              'stops', 'service_window'])
-Station = namedtuple('Station', ['name', 'zone'])
+Station = namedtuple('Station', ['name', 'zone', 'latitude', 'longitude'])
 Stop = namedtuple('Stop', ['arrival', 'arrival_day',
                            'departure', 'departure_day',
                            'stop_number'])
@@ -264,7 +264,9 @@ class Caltrain(object):
                     .group(1).strip().upper()
                 self.stations[r['stop_id']] = {
                     'name': _RENAME_MAP.get(stop_name, stop_name).title(),
-                    'zone': r['zone_id']
+                    'zone': r['zone_id'],
+                    'latitude': float(r['stop_lat']),
+                    'longitude': float(r['stop_lon'])
                 }
 
         # ---------------------------
@@ -285,7 +287,7 @@ class Caltrain(object):
                 )
 
         self.stations = dict(
-            (k, Station(v['name'], v['zone']))
+            (k, Station(v['name'], v['zone'], v['latitude'], v['longitude']))
             for k, v in self.stations.items())
 
         # -----------------------
