@@ -148,14 +148,15 @@ class Direction(Enum):
 
 @unique
 class TransitType(Enum):
-    baby_bullet = "bu"
-    limited = "li"
-    local = "lo"
-    tamien_sanjose = "tasj"
-    special = "sp"
+    # route_short_name from routes.txt
+    baby_bullet = "Bullet"
+    limited = "Limited"
+    local = "Local"
+    tamien_sanjose = "TaSJ-Shuttle"
+    special = "Special"
 
     def __str__(self):
-        return self.name.replace('_', ' ').title()
+        return self.name
 
 
 class UnexpectedGTFSLayoutError(Exception):
@@ -224,20 +225,23 @@ class Caltrain(object):
 
         # Record the days when certain trains are active.
         with z.open('calendar.txt', 'r') as csvfile:
-            calendar_reader = csv.reader(TextIOWrapper(csvfile))
-            next(calendar_reader)
+            calendar_reader = csv.DictReader(TextIOWrapper(csvfile))
+            keys = ('monday', 'tuesday', 'wednesday', 'thursday',
+                    'friday', 'saturday', 'sunday')
             for r in calendar_reader:
-                self._service_windows[r[0]] = ServiceWindow(
-                    start=datetime.strptime(r[-2], '%Y%m%d').date(),
-                    end=datetime.strptime(r[-1], '%Y%m%d').date(),
-                    days=set(i for i, j in enumerate(r[1:8]) if int(j) == 1)
+                self._service_windows[r['service_id']] = ServiceWindow(
+                    start=datetime.strptime(r['start_date'], '%Y%m%d').date(),
+                    end=datetime.strptime(r['end_date'], '%Y%m%d').date(),
+                    days=set(i for i, k in enumerate(keys) if int(r[k]) == 1)
                 )
 
         # Account for some exceptions to calendar.txt
         with z.open('calendar_dates.txt', 'r') as csvfile:
-            calendar_reader = csv.reader(TextIOWrapper(csvfile))
-            next(calendar_reader)  # skip header
-            for service_id, service_date, exception_type in calendar_reader:
+            calendar_reader = csv.DictReader(TextIOWrapper(csvfile))
+            for r in calendar_reader:
+                service_id = r['service_id']
+                service_date = r['date']
+                exception_type = r['exception_type']
                 # exception type: 1 indicates service added, 2 indicates service
                 # removed
                 # TODO: this doesn't handle the case of removing service dates
@@ -272,12 +276,18 @@ class Caltrain(object):
         # ---------------------------
         # 4. Record train definitions
         # ---------------------------
+        routes = {}
+        with z.open('routes.txt', 'r') as csvfile:
+            route_reader = csv.DictReader(TextIOWrapper(csvfile))
+            for r in route_reader:
+              routes[r['route_id']] = r
+
         with z.open('trips.txt', 'r') as csvfile:
             train_reader = csv.DictReader(TextIOWrapper(csvfile))
             for r in train_reader:
                 train_dir = int(r['direction_id'])
-                transit_type = TransitType(r['route_id'].lower()
-                                           .split('-')[0].strip())
+                route = routes[r['route_id']]
+                transit_type = TransitType(route['route_short_name'])
                 self.trains[r['trip_id']] = Train(
                     name=r['trip_short_name'],
                     kind=transit_type,
@@ -332,6 +342,39 @@ class Caltrain(object):
             return station
         else:
             raise UnknownStationError(name)
+
+    def get_trains(self, name, after=None):
+        """
+        Returns a list of possible trains with the given name and on the
+        after date.
+
+        :param name: the name to resolve
+        :type name: str or unicode
+        :param after: the time to find the train
+                      (default datetime.now())
+        :type after: datetime
+
+        :returns: a list of possible trains
+        """
+
+        if after is None:
+            after = datetime.now()
+
+        possibilities = []
+
+        for train in self.trains.values():
+
+            if name != train.name:
+                continue
+
+            sw = train.service_window
+            if after.date() < sw.start or after.date() > sw.end or \
+                    after.weekday() not in sw.days:
+                continue
+
+            possibilities.append(train)
+
+        return possibilities
 
     def fare_between(self, a, b):
         """
