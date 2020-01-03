@@ -6,10 +6,8 @@ from __future__ import unicode_literals
 import csv
 from collections import namedtuple
 from datetime import datetime, timedelta
-import os
 import pkg_resources
 import re
-import sys
 from zipfile import ZipFile
 from enum import Enum, unique
 from io import TextIOWrapper
@@ -20,7 +18,7 @@ Station = namedtuple('Station', ['name', 'zone', 'latitude', 'longitude'])
 Stop = namedtuple('Stop', ['arrival', 'arrival_day',
                            'departure', 'departure_day',
                            'stop_number'])
-ServiceWindow = namedtuple('ServiceWindow', ['start', 'end', 'days'])
+ServiceWindow = namedtuple('ServiceWindow', ['id', 'name', 'start', 'end', 'days', 'removed'])
 
 _BASE_DATE = datetime(1970, 1, 1, 0, 0, 0, 0)
 
@@ -123,7 +121,7 @@ _ALIAS_MAP_RAW = {
     'CALIFORNIA AVENUE': ('CAL AVE', 'CALIFORNIA', 'CALIFORNIA AVE',
                           'CAL', 'CAL AV', 'CALIFORNIA AV'),
     'REDWOOD CITY': 'REDWOOD',
-    'SAN JOSE DIRIDON': ('DIRIDON', 'SAN JOSE'),
+    'SAN JOSE DIRIDON': ('DIRIDON', 'SAN JOSE', 'SJ DIRIDON', 'SJ'),
     'COLLEGE PARK': 'COLLEGE',
     'BLOSSOM HILL': 'BLOSSOM',
     'MORGAN HILL': 'MORGAN',
@@ -154,6 +152,7 @@ class TransitType(Enum):
     local = "Local"
     tamien_sanjose = "TaSJ-Shuttle"
     special = "Special"
+    bus_bridge = "Bus Bridge"
 
     def __str__(self):
         return self.name
@@ -230,9 +229,12 @@ class Caltrain(object):
                     'friday', 'saturday', 'sunday')
             for r in calendar_reader:
                 self._service_windows[r['service_id']] = ServiceWindow(
+                    id=r['service_id'],
+                    name=r['service_name'],
                     start=datetime.strptime(r['start_date'], '%Y%m%d').date(),
                     end=datetime.strptime(r['end_date'], '%Y%m%d').date(),
-                    days=set(i for i, k in enumerate(keys) if int(r[k]) == 1)
+                    days=set(i for i, k in enumerate(keys) if int(r[k]) == 1),
+                    removed=False,
                 )
 
         # Account for some exceptions to calendar.txt
@@ -241,17 +243,20 @@ class Caltrain(object):
             for r in calendar_reader:
                 service_id = r['service_id']
                 service_date = r['date']
+                holiday_name = r['holiday_name']
                 exception_type = r['exception_type']
                 # exception type: 1 indicates service added, 2 indicates service
                 # removed
-                # TODO: this doesn't handle the case of removing service dates
-                if (exception_type == "1" and
-                        service_id not in self._service_windows):
+                if service_id not in self._service_windows:
                     service_date = datetime.strptime(
                         service_date, '%Y%m%d').date()
                     self._service_windows[service_id] = ServiceWindow(
-                        start=service_date, end=service_date,
-                        days=set([service_date.weekday()])
+                        id=service_id,
+                        name=holiday_name,
+                        start=service_date,
+                        end=service_date,
+                        days=set([service_date.weekday()]),
+                        removed=exception_type == "2",
                     )
 
         # ------------------
@@ -287,9 +292,11 @@ class Caltrain(object):
             for r in train_reader:
                 train_dir = int(r['direction_id'])
                 route = routes[r['route_id']]
+                name = r['trip_short_name'] or r['trip_id']
+                assert name
                 transit_type = TransitType(route['route_short_name'])
                 self.trains[r['trip_id']] = Train(
-                    name=r['trip_short_name'],
+                    name=name,
                     kind=transit_type,
                     direction=Direction(train_dir),
                     stops={},
@@ -368,9 +375,16 @@ class Caltrain(object):
                 continue
 
             sw = train.service_window
-            if after.date() < sw.start or after.date() > sw.end or \
-                    after.weekday() not in sw.days:
-                continue
+            in_time_window = (sw.start <= after.date() <= sw.end
+                              and after.weekday() in sw.days)
+            if sw.removed:
+                # removed and in time window
+                if in_time_window:
+                    continue
+            else:
+                # added but not in time window
+                if not in_time_window:
+                    continue
 
             possibilities.append(train)
 
@@ -420,12 +434,19 @@ class Caltrain(object):
         for name, train in self.trains.items():
 
             sw = train.service_window
+            in_time_window = (sw.start <= after.date() <= sw.end
+                              and after.weekday() in sw.days)
+            if sw.removed:
+                # removed and in time window
+                if in_time_window:
+                    continue
+            else:
+                # added but not in time window
+                if not in_time_window:
+                    continue
 
             # Check to see if the train's stops contains our stations
-            # and is available.
-            if after.date() < sw.start or after.date() > sw.end or \
-               after.weekday() not in sw.days or \
-               a.name not in train.stops or b.name not in train.stops:
+            if a.name not in train.stops or b.name not in train.stops:
                 continue
 
             stop_a = train.stops[a.name]
@@ -476,12 +497,19 @@ class Caltrain(object):
         for name, train in self.trains.items():
 
             sw = train.service_window
+            in_time_window = (sw.start <= after.date() <= sw.end
+                              and after.weekday() in sw.days)
+            if sw.removed:
+                # removed and in time window
+                if in_time_window:
+                    continue
+            else:
+                # added but not in time window
+                if not in_time_window:
+                    continue
 
             # Check to see if the train's stops contains our stations
-            # and is available.
-            if after.date() < sw.start or after.date() > sw.end or \
-               after.weekday() not in sw.days or \
-               a.name not in train.stops:
+            if a.name not in train.stops:
                 continue
 
             stop_a = train.stops[a.name]
